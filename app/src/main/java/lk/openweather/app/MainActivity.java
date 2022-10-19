@@ -2,6 +2,9 @@ package lk.openweather.app;
 
 import android.os.Bundle;
 import com.google.android.material.snackbar.Snackbar;
+import com.google.firebase.database.DatabaseReference;
+import com.google.firebase.database.FirebaseDatabase;
+
 import androidx.appcompat.app.AppCompatActivity;
 import android.view.View;
 import androidx.navigation.NavController;
@@ -13,7 +16,12 @@ import lk.openweather.app.databinding.ActivityMainBinding;
 import android.view.Menu;
 import android.view.MenuItem;
 
+
 public class MainActivity extends AppCompatActivity {
+    private String userId = "UfuYo1SJp8gr7M9mKT1RcS9Tqa53";
+    private DatabaseReference mDatabase;
+// ...
+
 
     private AppBarConfiguration appBarConfiguration;
 private ActivityMainBinding binding;
@@ -30,12 +38,11 @@ private ActivityMainBinding binding;
         NavController navController = Navigation.findNavController(this, R.id.nav_host_fragment_content_main);
         appBarConfiguration = new AppBarConfiguration.Builder(navController.getGraph()).build();
         NavigationUI.setupActionBarWithNavController(this, navController, appBarConfiguration);
-
+        mDatabase = FirebaseDatabase.getInstance().getReference();
         binding.fab.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
-                Snackbar.make(view, "Replace with your own action", Snackbar.LENGTH_LONG)
-                        .setAction("Action", null).show();
+                writeNewData("10","50","101200",System.currentTimeMillis());
             }
         });
     }
@@ -66,5 +73,10 @@ private ActivityMainBinding binding;
         NavController navController = Navigation.findNavController(this, R.id.nav_host_fragment_content_main);
         return NavigationUI.navigateUp(navController, appBarConfiguration)
                 || super.onSupportNavigateUp();
+    }
+    public void writeNewData(String temperature, String humidity, String pressure, long timestamp) {
+        Datalog datalog = new Datalog(temperature,humidity,pressure,timestamp);
+
+        mDatabase.child("UsersData").child(userId).child("readings").child(String.valueOf(timestamp)).setValue(datalog);
     }
 }
