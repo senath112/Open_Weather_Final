@@ -1,8 +1,19 @@
 package lk.openweather.app;
 
+import android.Manifest;
+import android.app.AlertDialog;
+import android.bluetooth.BluetoothAdapter;
+import android.bluetooth.BluetoothManager;
+import android.content.BroadcastReceiver;
+import android.content.Context;
+import android.content.DialogInterface;
+import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.graphics.DashPathEffect;
 import android.graphics.drawable.Drawable;
+import android.location.LocationManager;
+import android.os.Build;
 import android.os.Bundle;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -14,6 +25,7 @@ import androidx.fragment.app.Fragment;
 import androidx.navigation.fragment.NavHostFragment;
 
 import lk.openweather.app.databinding.FragmentFirstBinding;
+
 import com.github.mikephil.charting.charts.LineChart;
 import com.github.mikephil.charting.components.Legend;
 import com.github.mikephil.charting.components.LimitLine;
@@ -26,16 +38,26 @@ import com.github.mikephil.charting.formatter.IFillFormatter;
 import com.github.mikephil.charting.interfaces.dataprovider.LineDataProvider;
 import com.github.mikephil.charting.interfaces.datasets.ILineDataSet;
 import com.github.mikephil.charting.utils.Utils;
+import com.welie.blessed.BluetoothCentralManager;
+import com.welie.blessed.BluetoothPeripheral;
+
+import org.jetbrains.annotations.NotNull;
 
 import java.util.ArrayList;
+import java.util.List;
+import java.util.Objects;
 
 import lk.openweather.app.databinding.FragmentFirstBinding;
+import timber.log.Timber;
 
 public class FirstFragment extends Fragment {
+    private static final int REQUEST_ENABLE_BT = 1;
+    private static final int ACCESS_LOCATION_REQUEST = 2;
 
     private FragmentFirstBinding binding;
     private LineChart chart;
 
+    private BluetoothHandler bluetoothHandler;
     @Override
     public View onCreateView(
             LayoutInflater inflater, ViewGroup container,
@@ -49,6 +71,14 @@ public class FirstFragment extends Fragment {
 
     public void onViewCreated(@NonNull View view, Bundle savedInstanceState) {
         super.onViewCreated(view, savedInstanceState);
+
+        binding.buttonRead.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                bluetoothHandler.readDataFromEsp32();
+
+            }
+        });
 
         chart = binding.chart1;
         // background color
@@ -237,4 +267,169 @@ public class FirstFragment extends Fragment {
         binding = null;
     }
 
+    public void onResume() {
+        super.onResume();
+
+        if (getBluetoothManager().getAdapter() != null) {
+            if (!isBluetoothEnabled()) {
+                Intent enableBtIntent = new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
+                startActivityForResult(enableBtIntent, REQUEST_ENABLE_BT);
+            } else {
+                checkPermissions();
+            }
+        } else {
+            Timber.e("This device has no Bluetooth hardware");
+        }
+    }
+
+    private boolean isBluetoothEnabled() {
+        BluetoothAdapter bluetoothAdapter = getBluetoothManager().getAdapter();
+        if (bluetoothAdapter == null) return false;
+
+        return bluetoothAdapter.isEnabled();
+    }
+
+    private void initBluetoothHandler() {
+        bluetoothHandler = BluetoothHandler.getInstance(requireActivity().getApplicationContext());
+    }
+
+    @NotNull
+    private BluetoothManager getBluetoothManager() {
+        return Objects.requireNonNull((BluetoothManager) requireActivity().getSystemService(Context.BLUETOOTH_SERVICE), "cannot get BluetoothManager");
+    }
+
+    private final BroadcastReceiver locationServiceStateReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            String action = intent.getAction();
+            if (action != null && action.equals(LocationManager.MODE_CHANGED_ACTION)) {
+                boolean isEnabled = areLocationServicesEnabled();
+                Timber.i("Location service state changed to: %s", isEnabled ? "on" : "off");
+                checkPermissions();
+            }
+        }
+    };
+
+    private BluetoothPeripheral getPeripheral(String peripheralAddress) {
+        BluetoothCentralManager central = BluetoothHandler.getInstance(requireActivity().getApplicationContext()).central;
+        return central.getPeripheral(peripheralAddress);
+    }
+
+    private void checkPermissions() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            String[] missingPermissions = getMissingPermissions(getRequiredPermissions());
+            if (missingPermissions.length > 0) {
+                requestPermissions(missingPermissions, ACCESS_LOCATION_REQUEST);
+            } else {
+                permissionsGranted();
+            }
+        }
+    }
+
+    private String[] getMissingPermissions(String[] requiredPermissions) {
+        List<String> missingPermissions = new ArrayList<>();
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            for (String requiredPermission : requiredPermissions) {
+                if (requireActivity().getApplicationContext().checkSelfPermission(requiredPermission) != PackageManager.PERMISSION_GRANTED) {
+                    missingPermissions.add(requiredPermission);
+                }
+            }
+        }
+        return missingPermissions.toArray(new String[0]);
+    }
+
+    private String[] getRequiredPermissions() {
+        int targetSdkVersion = requireActivity().getApplicationInfo().targetSdkVersion;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && targetSdkVersion >= Build.VERSION_CODES.S) {
+            return new String[]{Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT};
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && targetSdkVersion >= Build.VERSION_CODES.Q) {
+            return new String[]{Manifest.permission.ACCESS_FINE_LOCATION};
+        } else return new String[]{Manifest.permission.ACCESS_COARSE_LOCATION};
+    }
+
+    private void permissionsGranted() {
+        // Check if Location services are on because they are required to make scanning work for SDK < 31
+        int targetSdkVersion = requireActivity().getApplicationInfo().targetSdkVersion;
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S && targetSdkVersion < Build.VERSION_CODES.S) {
+            if (checkLocationServices()) {
+                initBluetoothHandler();
+            }
+        } else {
+            initBluetoothHandler();
+        }
+    }
+
+    private boolean areLocationServicesEnabled() {
+        LocationManager locationManager = (LocationManager) requireActivity().getApplicationContext().getSystemService(Context.LOCATION_SERVICE);
+        if (locationManager == null) {
+            Timber.e("could not get location manager");
+            return false;
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            return locationManager.isLocationEnabled();
+        } else {
+            boolean isGpsEnabled = locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER);
+            boolean isNetworkEnabled = locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER);
+
+            return isGpsEnabled || isNetworkEnabled;
+        }
+    }
+
+    private boolean checkLocationServices() {
+        if (!areLocationServicesEnabled()) {
+            new AlertDialog.Builder(requireActivity())
+                    .setTitle("Location services are not enabled")
+                    .setMessage("Scanning for Bluetooth peripherals requires locations services to be enabled.") // Want to enable?
+                    .setPositiveButton("Enable", new DialogInterface.OnClickListener() {
+                        public void onClick(DialogInterface dialogInterface, int i) {
+                            dialogInterface.cancel();
+                            startActivity(new Intent(android.provider.Settings.ACTION_LOCATION_SOURCE_SETTINGS));
+                        }
+                    })
+                    .setNegativeButton("Cancel", new DialogInterface.OnClickListener() {
+                        @Override
+                        public void onClick(DialogInterface dialog, int which) {
+                            // if this button is clicked, just close
+                            // the dialog box and do nothing
+                            dialog.cancel();
+                        }
+                    })
+                    .create()
+                    .show();
+            return false;
+        } else {
+            return true;
+        }
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+
+        // Check if all permission were granted
+        boolean allGranted = true;
+        for (int result : grantResults) {
+            if (result != PackageManager.PERMISSION_GRANTED) {
+                allGranted = false;
+                break;
+            }
+        }
+
+        if (allGranted) {
+            permissionsGranted();
+        } else {
+            new AlertDialog.Builder(requireActivity())
+                    .setTitle("Permission is required for scanning Bluetooth peripherals")
+                    .setMessage("Please grant permissions")
+                    .setPositiveButton("Retry", new DialogInterface.OnClickListener() {
+                        public void onClick(DialogInterface dialogInterface, int i) {
+                            dialogInterface.cancel();
+                            checkPermissions();
+                        }
+                    })
+                    .create()
+                    .show();
+        }
+    }
 }

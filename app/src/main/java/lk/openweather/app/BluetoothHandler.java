@@ -13,6 +13,7 @@ import android.bluetooth.le.ScanResult;
 import android.content.Context;
 import android.content.Intent;
 import android.os.Handler;
+import android.util.Log;
 
 import com.welie.blessed.BluetoothBytesParser;
 import com.welie.blessed.BluetoothCentralManager;
@@ -55,6 +56,10 @@ class BluetoothHandler {
     public static final String MEASUREMENT_WEIGHT = "blessed.measurement.weight";
     public static final String MEASUREMENT_WEIGHT_EXTRA = "blessed.measurement.weight.extra";
     public static final String MEASUREMENT_EXTRA_PERIPHERAL = "blessed.measurement.peripheral";
+
+    private static final UUID BLUETOOTH_LE_NRF_SERVICE = UUID.fromString("6e400001-b5a3-f393-e0a9-e50e24dcca9e");
+    private static final UUID BLUETOOTH_LE_NRF_CHAR_WRITE = UUID.fromString("6e400002-b5a3-f393-e0a9-e50e24dcca9e"); //read on microbit, write on adafruit
+    private static final UUID BLUETOOTH_LE_NRF_CHAR_READ = UUID.fromString("6e400003-b5a3-f393-e0a9-e50e24dcca9e"); // read
 
     // UUIDs for the Blood Pressure service (BLP)
     private static final UUID BLP_SERVICE_UUID = UUID.fromString("00001810-0000-1000-8000-00805f9b34fb");
@@ -106,6 +111,7 @@ class BluetoothHandler {
     private final Context context;
     private final Handler handler = new Handler();
     private int currentTimeCounter = 0;
+    private BluetoothPeripheral bluetoothPeripheral;
 
     // Callback for peripherals
     private final BluetoothPeripheralCallback peripheralCallback = new BluetoothPeripheralCallback() {
@@ -153,6 +159,8 @@ class BluetoothHandler {
             peripheral.setNotify(GLUCOSE_SERVICE_UUID, GLUCOSE_MEASUREMENT_CONTEXT_CHARACTERISTIC_UUID, true);
             peripheral.setNotify(GLUCOSE_SERVICE_UUID, GLUCOSE_RECORD_ACCESS_POINT_CHARACTERISTIC_UUID, true);
             peripheral.setNotify(CONTOUR_SERVICE_UUID, CONTOUR_CLOCK, true);
+            peripheral.setNotify(BLUETOOTH_LE_NRF_SERVICE, BLUETOOTH_LE_NRF_CHAR_READ, true);
+
         }
 
         @Override
@@ -181,10 +189,18 @@ class BluetoothHandler {
 
         @Override
         public void onCharacteristicUpdate(@NotNull BluetoothPeripheral peripheral, @NotNull byte[] value, @NotNull BluetoothGattCharacteristic characteristic, @NotNull GattStatus status) {
-            if (status != GattStatus.SUCCESS) return;
+            if (status != GattStatus.SUCCESS) {
+                Log.i("BluetoothHandler1",new String(value));
+                return;
+            }
+
 
             UUID characteristicUUID = characteristic.getUuid();
             BluetoothBytesParser parser = new BluetoothBytesParser(value);
+            if (characteristicUUID.equals(BLUETOOTH_LE_NRF_CHAR_READ)) {
+                Log.i("BluetoothHandler",new String(value));
+            }
+
 
         }
 
@@ -228,7 +244,8 @@ class BluetoothHandler {
 
         @Override
         public void onConnectedPeripheral(@NotNull BluetoothPeripheral peripheral) {
-            Timber.i("connected to '%s'", peripheral.getName());
+            Log.i("connected to '%s'", peripheral.getName());
+            bluetoothPeripheral = peripheral;
         }
 
         @Override
@@ -239,6 +256,7 @@ class BluetoothHandler {
         @Override
         public void onDisconnectedPeripheral(@NotNull final BluetoothPeripheral peripheral, final @NotNull HciStatus status) {
             Timber.i("disconnected '%s' with status %s", peripheral.getName(), status);
+            bluetoothPeripheral = null;
 
             // Reconnect to this device when it becomes available again
             handler.postDelayed(new Runnable() {
@@ -259,6 +277,7 @@ class BluetoothHandler {
                 //central.createBond(peripheral, peripheralCallback);
             } else {
                 central.connectPeripheral(peripheral, peripheralCallback);
+                Log.i("BluetoothHandler",peripheral.hashCode()+"");
             }
         }
 
@@ -314,4 +333,19 @@ class BluetoothHandler {
     private boolean isOmronBPM(final String name) {
         return name.contains("BLESmart_") || name.contains("BLEsmart_");
     }
+    public void readDataFromEsp32() {
+        String[] codeLines = new String[]{"import os","f=open('datalog.d/datalog')","print(f.read())"};
+        for (String codeLine :
+                codeLines) {
+            final byte[] command = (codeLine + "\r\n").getBytes();
+            if (bluetoothPeripheral == null) {
+                Log.d("BluetoothHandler", "Not Connected");
+                return;
+            }
+            bluetoothPeripheral.writeCharacteristic(BLUETOOTH_LE_NRF_SERVICE, BLUETOOTH_LE_NRF_CHAR_WRITE, command, WriteType.WITH_RESPONSE);
+            Log.d("BluetoothHandler", "Write Success");
+            Log.i("BluetoothHandlerh",bluetoothPeripheral.hashCode()+"");
+        }
+    }
+
 }
