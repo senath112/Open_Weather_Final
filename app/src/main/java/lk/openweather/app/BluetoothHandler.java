@@ -15,6 +15,7 @@ import android.content.Intent;
 import android.os.Handler;
 import android.util.Log;
 
+import com.google.gson.Gson;
 import com.welie.blessed.BluetoothBytesParser;
 import com.welie.blessed.BluetoothCentralManager;
 import com.welie.blessed.BluetoothCentralManagerCallback;
@@ -125,7 +126,7 @@ class BluetoothHandler {
 
             peripheral.setPreferredPhy(PhyType.LE_2M, PhyType.LE_2M, PhyOptions.S2);
 
-            // Read manufacturer and model number from the Device Information Service
+            // Read manufacturer and model number fr\om the Device Information Service
             peripheral.readCharacteristic(DIS_SERVICE_UUID, MANUFACTURER_NAME_CHARACTERISTIC_UUID);
             peripheral.readCharacteristic(DIS_SERVICE_UUID, MODEL_NUMBER_CHARACTERISTIC_UUID);
 
@@ -199,6 +200,10 @@ class BluetoothHandler {
             BluetoothBytesParser parser = new BluetoothBytesParser(value);
             if (characteristicUUID.equals(BLUETOOTH_LE_NRF_CHAR_READ)) {
                 Log.i("BluetoothHandler",new String(value));
+                String json = new String(value);
+                Gson gson = new Gson();
+                SplitData split = gson.fromJson(json, SplitData.class);
+                System.out.println(split);
             }
 
 
@@ -334,7 +339,7 @@ class BluetoothHandler {
         return name.contains("BLESmart_") || name.contains("BLEsmart_");
     }
     public void readDataFromEsp32() {
-        String[] codeLines = new String[]{"import os","f=open('datalog.d/datalog')","print(f.read())"};
+        String[] codeLines = new String[]{"import os","f=open('datalog.d/datalog')","print(f.read())","machine.SOFT_RESET"};
         for (String codeLine :
                 codeLines) {
             final byte[] command = (codeLine + "\r\n").getBytes();
@@ -344,8 +349,17 @@ class BluetoothHandler {
             }
             bluetoothPeripheral.writeCharacteristic(BLUETOOTH_LE_NRF_SERVICE, BLUETOOTH_LE_NRF_CHAR_WRITE, command, WriteType.WITH_RESPONSE);
             Log.d("BluetoothHandler", "Write Success");
-            Log.i("BluetoothHandlerh",bluetoothPeripheral.hashCode()+"");
+            Log.i("BluetoothHandler",bluetoothPeripheral.hashCode()+"");
         }
+    }
+    class SplitData {
+
+        private String temperature;
+        private String humidity;
+        private String pressure;
+        private String timestamp;
+
+
     }
 
 }

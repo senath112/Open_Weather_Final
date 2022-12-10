@@ -74,7 +74,7 @@ public class MainActivity extends AppCompatActivity {
         binding.fab.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
-                writeNewData("10", "50", "101200", System.currentTimeMillis() / 1000);
+                writeNewData("26", "77", "101376", System.currentTimeMillis() / 1000);
             }
         });
     }
