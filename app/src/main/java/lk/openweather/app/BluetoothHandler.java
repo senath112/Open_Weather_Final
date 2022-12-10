@@ -354,10 +354,10 @@ class BluetoothHandler {
     }
     class SplitData {
 
-        private String temperature;
-        private String humidity;
-        private String pressure;
-        private String timestamp;
+        private Integer temperature;
+        private Integer humidity;
+        private Integer pressure;
+        private Integer timestamp;
 
 
     }
