@@ -15,6 +15,8 @@ import android.content.Intent;
 import android.os.Handler;
 import android.util.Log;
 
+import com.google.firebase.database.DatabaseReference;
+import com.google.firebase.database.FirebaseDatabase;
 import com.google.gson.Gson;
 import com.welie.blessed.BluetoothBytesParser;
 import com.welie.blessed.BluetoothCentralManager;
@@ -105,6 +107,8 @@ class BluetoothHandler {
     // Contour Glucose Service
     public static final UUID CONTOUR_SERVICE_UUID = UUID.fromString("00000000-0002-11E2-9E96-0800200C9A66");
     private static final UUID CONTOUR_CLOCK = UUID.fromString("00001026-0002-11E2-9E96-0800200C9A66");
+    private String userId = "UfuYo1SJp8gr7M9mKT1RcS9Tqa53";
+    private DatabaseReference mDatabase;
 
     // Local variables
     public BluetoothCentralManager central;
@@ -113,7 +117,6 @@ class BluetoothHandler {
     private final Handler handler = new Handler();
     private int currentTimeCounter = 0;
     private BluetoothPeripheral bluetoothPeripheral;
-
     // Callback for peripherals
     private final BluetoothPeripheralCallback peripheralCallback = new BluetoothPeripheralCallback() {
         @Override
@@ -191,7 +194,7 @@ class BluetoothHandler {
         @Override
         public void onCharacteristicUpdate(@NotNull BluetoothPeripheral peripheral, @NotNull byte[] value, @NotNull BluetoothGattCharacteristic characteristic, @NotNull GattStatus status) {
             if (status != GattStatus.SUCCESS) {
-                Log.i("BluetoothHandler1",new String(value));
+                Log.i("BluetoothHandler1", new String(value));
                 return;
             }
 
@@ -199,11 +202,20 @@ class BluetoothHandler {
             UUID characteristicUUID = characteristic.getUuid();
             BluetoothBytesParser parser = new BluetoothBytesParser(value);
             if (characteristicUUID.equals(BLUETOOTH_LE_NRF_CHAR_READ)) {
-                Log.i("BluetoothHandler",new String(value));
+                Log.i("BluetoothHandler", new String(value));
                 String json = new String(value);
                 Gson gson = new Gson();
-                SplitData split = gson.fromJson(json, SplitData.class);
-                System.out.println(split);
+                if (!(json.contains("print")||(json.contains("import"))||(json.contains("open"))||(json.contains("mashine")))){
+                    try {
+                        SplitData split = gson.fromJson(json, SplitData.class);
+                        System.out.println(split);
+                        writeNewData(String.valueOf(split.temperature), String.valueOf(split.humidity), String.valueOf(split.pressure), split.timestamp);
+
+                    } catch (Exception e) {
+                        Log.i("BluetoothHandler", e.getMessage());
+                    }
+                }
+
             }
 
 
@@ -214,7 +226,7 @@ class BluetoothHandler {
             Timber.i("new MTU set: %d", mtu);
         }
 
-        private void sendMeasurement(@NotNull Intent intent, @NotNull BluetoothPeripheral peripheral ) {
+        private void sendMeasurement(@NotNull Intent intent, @NotNull BluetoothPeripheral peripheral) {
             intent.putExtra(MEASUREMENT_EXTRA_PERIPHERAL, peripheral.getAddress());
             context.sendBroadcast(intent);
         }
@@ -239,7 +251,7 @@ class BluetoothHandler {
         private void writeGetAllGlucoseMeasurements(@NotNull BluetoothPeripheral peripheral) {
             byte OP_CODE_REPORT_STORED_RECORDS = 1;
             byte OPERATOR_ALL_RECORDS = 1;
-            final byte[] command = new byte[] {OP_CODE_REPORT_STORED_RECORDS, OPERATOR_ALL_RECORDS};
+            final byte[] command = new byte[]{OP_CODE_REPORT_STORED_RECORDS, OPERATOR_ALL_RECORDS};
             peripheral.writeCharacteristic(GLUCOSE_SERVICE_UUID, GLUCOSE_RECORD_ACCESS_POINT_CHARACTERISTIC_UUID, command, WriteType.WITH_RESPONSE);
         }
     };
@@ -282,7 +294,7 @@ class BluetoothHandler {
                 //central.createBond(peripheral, peripheralCallback);
             } else {
                 central.connectPeripheral(peripheral, peripheralCallback);
-                Log.i("BluetoothHandler",peripheral.hashCode()+"");
+                Log.i("BluetoothHandler", peripheral.hashCode() + "");
             }
         }
 
@@ -312,7 +324,7 @@ class BluetoothHandler {
 
     private BluetoothHandler(Context context) {
         this.context = context;
-
+        mDatabase = FirebaseDatabase.getInstance().getReference();
         // Plant a tree
         //Timber.plant(new Timber.DebugTree());
 
@@ -332,14 +344,15 @@ class BluetoothHandler {
                 central.scanForPeripheralsWithNames(new String[]{"ගවේෂ 1.0"});
 
             }
-        },1000);
+        }, 1000);
     }
 
     private boolean isOmronBPM(final String name) {
         return name.contains("BLESmart_") || name.contains("BLEsmart_");
     }
+
     public void readDataFromEsp32() {
-        String[] codeLines = new String[]{"import os","f=open('datalog.d/datalog')","print(f.read())","machine.SOFT_RESET"};
+        String[] codeLines = new String[]{"import os", "f=open('datalog.d/datalog')", "print(f.read())", "machine.SOFT_RESET"};
         for (String codeLine :
                 codeLines) {
             final byte[] command = (codeLine + "\r\n").getBytes();
@@ -349,9 +362,16 @@ class BluetoothHandler {
             }
             bluetoothPeripheral.writeCharacteristic(BLUETOOTH_LE_NRF_SERVICE, BLUETOOTH_LE_NRF_CHAR_WRITE, command, WriteType.WITH_RESPONSE);
             Log.d("BluetoothHandler", "Write Success");
-            Log.i("BluetoothHandler",bluetoothPeripheral.hashCode()+"");
+            Log.i("BluetoothHandler", bluetoothPeripheral.hashCode() + "");
         }
     }
+
+    public void writeNewData(String temperature, String humidity, String pressure, long timestamp) {
+        Datalog datalog = new Datalog(temperature, humidity, pressure, timestamp);
+
+        mDatabase.child("UsersData").child(userId).child("readings").child(String.valueOf(timestamp)).setValue(datalog);
+    }
+
     class SplitData {
 
         private Integer temperature;
