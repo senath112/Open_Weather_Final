@@ -205,11 +205,13 @@ class BluetoothHandler {
                 Log.i("BluetoothHandler", new String(value));
                 String json = new String(value);
                 Gson gson = new Gson();
-                if (!(json.contains("print")||(json.contains("import"))||(json.contains("open"))||(json.contains("mashine")))){
+                if (!(json.contains("print")||(json.contains("import"))||(json.contains("open"))||(json.contains("machine"))||(json.contains("5"))||(json.contains(""))||(json.contains(">>>")))){
                     try {
                         SplitData split = gson.fromJson(json, SplitData.class);
                         System.out.println(split);
-                        writeNewData(String.valueOf(split.temperature), String.valueOf(split.humidity), String.valueOf(split.pressure), split.timestamp);
+                        System.out.println(split.humidity);
+                        System.out.println(split.pressure);
+                        writeNewData(String.valueOf(split.temperature),String.valueOf(split.humidity), String.valueOf(split.pressure), split.timestamp);
 
                     } catch (Exception e) {
                         Log.i("BluetoothHandler", e.getMessage());
